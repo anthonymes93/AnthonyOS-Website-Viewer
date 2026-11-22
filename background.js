@@ -44,11 +44,12 @@ const openViewer = async (senderTabId, items) => {
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
     await restored;
+    if (message.type === 'AO_INSTALL_CRM_PAGE') { if (!sender.tab?.id || !sender.tab.url?.startsWith('https://autotext-psi.vercel.app/')) return { error: 'Not the AnthonyOS CRM.' }; await chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, files: ['crm-page.js'], world: 'MAIN' }); return { ok: true }; }
     if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items);
     if (message.type === 'AO_VIEW_MOVE') { await move(message.delta > 0 ? 1 : -1); return { ok: true }; }
     if (message.type === 'AO_VIEW_GET') return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting };
     if (message.type === 'AO_VIEW_REVIEW') {
-      if (sender.tab?.id !== state.tabId || state.waiting) return { error: 'No active viewer or save already in progress.' };
+      if ((sender.tab?.id !== state.tabId && !sender.url?.startsWith(chrome.runtime.getURL('popup.html'))) || state.waiting) return { error: 'No active viewer or save already in progress.' };
       if (!state.crmTabId) return { error: 'CRM tab unavailable. Open the CRM to resume.' };
       const item = current();
       state.waiting = true; await emit();
@@ -76,9 +77,4 @@ chrome.tabs.onRemoved.addListener(tabId => {
   if (tabId === state.tabId) state.tabId = null;
   if (tabId === state.crmTabId) state.crmTabId = null;
   persist();
-});
-chrome.action.onClicked.addListener(async () => {
-  const matching = await chrome.tabs.query({ url: 'https://autotext-psi.vercel.app/*' });
-  if (matching.length) return chrome.tabs.update(matching[0].id, { url: CRM_URL, active: true });
-  await chrome.tabs.create({ url: CRM_URL });
 });
