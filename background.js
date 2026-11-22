@@ -47,6 +47,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     await restored;
     if (message.type === 'AO_INSTALL_CRM_PAGE') { if (!sender.tab?.id || !sender.tab.url?.startsWith('https://autotext-psi.vercel.app/')) return { error: 'Not the AnthonyOS CRM.' }; await chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, files: ['crm-page.js'], world: 'MAIN' }); return { ok: true }; }
     if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items, message.startId);
+    if (message.type === 'AO_VIEW_SYNC_STATUS') return { active: sender.tab?.id === state.crmTabId && !!state.tabId };
     if (message.type === 'AO_VIEW_SYNC') {
       if (sender.tab?.id !== state.crmTabId || !state.tabId || state.waiting) return { ok: false };
       const clean = (message.items ?? []).filter(x => x.id && validUrl(x.websiteUrl)).map(x => ({
