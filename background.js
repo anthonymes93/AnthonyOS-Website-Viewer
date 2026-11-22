@@ -1,6 +1,42 @@
 const CRM_URL = 'https://autotext-psi.vercel.app/website-opportunities';
 let state = { items: [], index: 0, tabId: null, crmTabId: null, controlWindowId: null, waiting: false };
-let reviewQueue = Promise.resolve();
+// Durable write-ahead queue. Save locally before advancing the website.
+let flushPromise = null;
+const pendingReady = chrome.storage.local.get('pendingReviews').then(v => Array.isArray(v.pendingReviews) ? v.pendingReviews : []);
+async function flushReviews() {
+  if (flushPromise) return flushPromise;
+  flushPromise = (async () => {
+    const pending = await pendingReady;
+    while (pending.length) {
+      const job = pending[0];
+      let tabId = state.crmTabId;
+      try {
+        if (!tabId || !(await chrome.tabs.get(tabId).catch(() => null))) {
+          const tabs = await chrome.tabs.query({url:'https://autotext-psi.vercel.app/*'});
+          tabId = tabs.find(t => t.url?.includes('/website-opportunities'))?.id;
+        }
+        if (!tabId) throw Error('Open Website Opportunities in AnthonyOS to resume saving.');
+        const response = await chrome.tabs.sendMessage(tabId, {type:'AO_CRM_REVIEW', id:job.id, tag:job.tag});
+        if (!response?.ok) throw Error(response?.error || 'Firestore save failed');
+        pending.shift();
+        await chrome.storage.local.set({pendingReviews:pending});
+        reviewError = '';
+      } catch (e) {
+        reviewError = 'Unsaved tags (' + pending.length + '): ' + (e.message || e);
+        break;
+      }
+    }
+  })().finally(() => { flushPromise = null; });
+  return flushPromise;
+}
+chrome.alarms.onAlarm.addListener(a => { if(a.name === 'review-retry') void flushReviews(); });
+chrome.alarms.create('review-retry', {periodInMinutes:1});
+void restoredAfterStartup();
+async function restoredAfterStartup() {
+  await pendingReady;
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  await flushReviews();
+}
 let reviewError = '';
 let hasMorePages = true;
 let pageLoading = null;
@@ -93,34 +129,24 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       return { ok: true, total: clean.length };
     }
     if (message.type === 'AO_VIEW_MOVE') { await move(message.delta > 0 ? 1 : -1); return { ok: true }; }
-    if (message.type === 'AO_VIEW_GET') return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting, reviewError };
+    if (message.type === 'AO_VIEW_GET') { const pending = await pendingReady; return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting, reviewError, pendingCount: pending.length }; }
     if (message.type === 'AO_VIEW_REVIEW') {
       if (sender.tab?.id !== state.tabId && !sender.url?.startsWith(chrome.runtime.getURL('popup.html'))) return { error: 'No active viewer.' };
       if (!state.crmTabId) return { error: 'CRM tab unavailable. Open the CRM to resume.' };
       const item = current();
       if (!item) return { error: 'No website selected.' };
       const tag = message.tag || '';
-      const crmTabId = state.crmTabId;
-      const previousTags = [...item.tags];
+      const pending = await pendingReady;
+      pending.push({id:item.id,tag,createdAt:Date.now()});
+      // Do not navigate until the review is safely written to local storage.
+      await chrome.storage.local.set({pendingReviews:pending});
       item.tags = tag ? [tag] : [];
       state.index = (state.index + 1) % state.items.length;
-      // Navigate immediately; Firestore saving happens asynchronously in order.
       const nextUrl = current()?.websiteUrl || CRM_URL;
-      const navigation = chrome.tabs.update(state.tabId, { url: nextUrl });
       void persist();
+      void chrome.tabs.update(state.tabId, {url:nextUrl}).catch(e => {reviewError = 'Navigation failed: ' + e.message;});
       maybePrefetch();
-      reviewError = '';
-      reviewQueue = reviewQueue.catch(() => {}).then(async () => {
-        try {
-          const result = await chrome.tabs.sendMessage(crmTabId, { type: 'AO_CRM_REVIEW', id: item.id, tag });
-          if (!result?.ok) throw new Error(result?.error || 'Could not save review');
-        } catch (error) {
-          item.tags = previousTags;
-          reviewError = `Could not save review for ${item.title || item.websiteUrl}: ${String(error?.message || error)}`;
-          await persist();
-        }
-      });
-      void navigation.catch(error => { reviewError = 'Navigation failed: ' + error.message; });
+      void flushReviews();
       return { ok: true };
     }
     return { error: 'Unknown message' };
