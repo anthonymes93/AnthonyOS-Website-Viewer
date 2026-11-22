@@ -1,5 +1,23 @@
 const CRM_URL = 'https://autotext-psi.vercel.app/website-opportunities';
-let state = { items: [], index: 0, tabId: null, crmTabId: null, controlWindowId: null, waiting: false };\nlet reviewQueue = Promise.resolve();\nlet reviewError = '';\nlet hasMorePages = true;\nlet pageLoading = null;\nasync function prefetchPage() {\n  if (!hasMorePages || pageLoading || !state.crmTabId) return pageLoading;\n  pageLoading = (async () => {\n    const result = await chrome.tabs.sendMessage(state.crmTabId, { type: 'AO_CRM_PAGE' });\n    if (result?.error) throw new Error(result.error);\n    const added = (result?.items ?? []).filter(x => x.id && validUrl(x.websiteUrl));\n    const ids = new Set(state.items.map(x => x.id));\n    for (const item of added) if (!ids.has(item.id)) { state.items.push(item); ids.add(item.id); }\n    hasMorePages = !!result?.hasMore;\n    await persist();\n  })().catch(error => { reviewError = 'Could not load more websites: ' + error.message; }).finally(() => { pageLoading = null; });\n  return pageLoading;\n}\nfunction maybePrefetch() { if (state.items.length - state.index <= 5) void prefetchPage(); }
+let state = { items: [], index: 0, tabId: null, crmTabId: null, controlWindowId: null, waiting: false };
+let reviewQueue = Promise.resolve();
+let reviewError = '';
+let hasMorePages = true;
+let pageLoading = null;
+async function prefetchPage() {
+  if (!hasMorePages || pageLoading || !state.crmTabId) return pageLoading;
+  pageLoading = (async () => {
+    const result = await chrome.tabs.sendMessage(state.crmTabId, { type: 'AO_CRM_PAGE' });
+    if (result?.error) throw new Error(result.error);
+    const added = (result?.items ?? []).filter(x => x.id && validUrl(x.websiteUrl));
+    const ids = new Set(state.items.map(x => x.id));
+    for (const item of added) if (!ids.has(item.id)) { state.items.push(item); ids.add(item.id); }
+    hasMorePages = !!result?.hasMore;
+    await persist();
+  })().catch(error => { reviewError = 'Could not load more websites: ' + error.message; }).finally(() => { pageLoading = null; });
+  return pageLoading;
+}
+function maybePrefetch() { if (state.items.length - state.index <= 5) void prefetchPage(); }
 async function persist() { await chrome.storage.session.set({ viewerState: state }); }
 const restored = chrome.storage.session.get('viewerState').then(data => { if (data.viewerState) state = data.viewerState; }).catch(() => {});
 
@@ -27,7 +45,8 @@ const openViewer = async (senderTabId, items, startId = null, hasMore = false) =
   }));
   if (!clean.length) return { error: 'No opportunities with valid website URLs.' };
   await restored;
-  state.items = clean;\n  hasMorePages = !!hasMore;
+  state.items = clean;
+  hasMorePages = !!hasMore;
   state.index = Math.max(0, clean.findIndex(item => item.id === startId));
   state.crmTabId = senderTabId;
   state.waiting = false;
@@ -39,7 +58,9 @@ const openViewer = async (senderTabId, items, startId = null, hasMore = false) =
   const tab = await chrome.tabs.create({ url, active: true });
   state.tabId = tab.id;
   await persist();
-  await openControls();\n  maybePrefetch();\n  return { ok: true, total: clean.length };
+  await openControls();
+  maybePrefetch();
+  return { ok: true, total: clean.length };
 };
 async function openControls() {
   if (state.controlWindowId) {
