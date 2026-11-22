@@ -18,6 +18,36 @@
     window.addEventListener('message', listener);
     window.postMessage({ channel: CHANNEL, kind: REQUEST, id, payload }, location.origin);
   });
+  // Replace the CRM's regular Open Website action when the extension is installed.
+  // Capture before React's click handler so it does not create an extra tab.
+  document.addEventListener('click', async event => {
+    const target = event.target instanceof Element ? event.target : null;
+    const openButton = target?.closest('.wo-card .wo-action-btn--primary');
+    if (!openButton) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    const card = openButton.closest('.wo-card');
+    const selectedUrl = card?.querySelector('.wo-url-value--highlight')?.textContent?.trim() ?? '';
+    const originalText = openButton.textContent;
+    openButton.disabled = true;
+    openButton.textContent = 'Opening Viewer…';
+    try {
+      await bridgeReady;
+      const items = await send({ action: 'list' });
+      const normalize = raw => { try { const url = new URL(/^https?:\\/\\//i.test(raw) ? raw : 'https://' + raw); return url.hostname.toLowerCase().replace(/^www\\./,''); } catch { return ''; } };
+      const selected = items.find(item => normalize(item.websiteUrl) === normalize(selectedUrl));
+      const result = await chrome.runtime.sendMessage({ type: 'AO_VIEW_START', items, startId: selected?.id });
+      if (!result?.ok) throw new Error(result?.error || 'Viewer unavailable');
+    } catch (error) {
+      openButton.textContent = 'Viewer error — try Launch Viewer';
+      console.error('AnthonyOS Website Viewer:', error);
+      return;
+    } finally {
+      openButton.disabled = false;
+    }
+    openButton.textContent = originalText;
+  }, true);
   const button = document.createElement('button');
   button.textContent = 'Launch Website Viewer';
   Object.assign(button.style, { position:'fixed',bottom:'24px',right:'24px',zIndex:2147483647,padding:'14px 18px',background:'#6d5dfc',border:'1px solid #988dff',borderRadius:'12px',color:'#fff',font:'600 14px system-ui',cursor:'pointer',boxShadow:'0 8px 30px #0009' });
