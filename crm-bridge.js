@@ -5,13 +5,8 @@
   const CHANNEL = 'anthonyos-website-viewer';
   const REQUEST = 'AO_BRIDGE_REQUEST', RESPONSE = 'AO_BRIDGE_RESPONSE';
   // Messages are accepted only from this extension's isolated content script.
-  const inject = () => {
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('crm-page.js');
-    script.onload = () => script.remove();
-    (document.head || document.documentElement).append(script);
-  };
-  inject();
+  const bridgeReady = chrome.runtime.sendMessage({ type: 'AO_INSTALL_CRM_PAGE' })
+    .then(result => { if (!result?.ok) throw new Error(result?.error || 'Could not initialize CRM bridge'); });
   const send = payload => new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
     const timeout = setTimeout(() => { window.removeEventListener('message', listener); reject(new Error('CRM did not respond. Refresh its tab.')); }, 12000);
@@ -29,6 +24,7 @@
   button.addEventListener('click', async () => {
     button.disabled = true; button.textContent = 'Loading opportunities…';
     try {
+      await bridgeReady;
       const data = await send({ action:'list' });
       const result = await chrome.runtime.sendMessage({ type:'AO_VIEW_START', items:data });
       if (result?.error) throw new Error(result.error);
@@ -39,7 +35,7 @@
   document.body.appendChild(button);
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (message.type !== 'AO_CRM_REVIEW') return;
-    send({action:'review', id:message.id, tag:message.tag}).then(()=>reply({ok:true})).catch(e=>reply({error:e.message}));
+    bridgeReady.then(() => send({action:'review', id:message.id, tag:message.tag})).then(()=>reply({ok:true})).catch(e=>reply({error:e.message}));
     return true;
   });
 })();
