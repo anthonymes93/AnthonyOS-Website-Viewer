@@ -6,7 +6,8 @@ const update=async()=>{
   const has=!!r?.item;
   $('title').textContent=r.item?.title||'No website selected';
   $('count').textContent=r.total?`${r.index+1} of ${r.total}`:'Not running';
-  $('state').textContent=r.waiting?'Saving…':'';\n  if(r.reviewError) $('error').textContent=r.reviewError;
+  $('state').textContent=r.waiting?'Saving…':'';
+  if(r.reviewError) $('error').textContent=r.reviewError;
   for(const id of ['prev','next','review'])$(id).disabled=!has||r.waiting;
   $('tags').querySelectorAll('button').forEach(b=>b.disabled=!has||r.waiting);
 };
