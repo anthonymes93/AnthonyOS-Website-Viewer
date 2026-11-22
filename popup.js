@@ -1,4 +1,4 @@
-const tags=['Good Website','Ugly Website','Immediately Contact'];
+const tags=['Good Website','Ugly Website','Immediately Contact','Website Offline'];
 const $=id=>document.getElementById(id);
 const send=async data=>chrome.runtime.sendMessage(data);
 const update=async()=>{
