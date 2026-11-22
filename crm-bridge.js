@@ -22,6 +22,7 @@
   // Capture before React's click handler so it does not create an extra tab.
   document.addEventListener('click', async event => {
     const target = event.target instanceof Element ? event.target : null;
+    if (location.pathname !== '/website-opportunities') return;
     const openButton = target?.closest('.wo-card .wo-action-btn--primary');
     if (!openButton) return;
     event.preventDefault();
@@ -63,6 +64,19 @@
     finally { setTimeout(()=>{button.disabled=false;button.textContent='Launch Website Viewer';},3500); }
   });
   document.body.appendChild(button);
+  // AnthonyOS uses client-side routing: content scripts survive navigation.
+  // Keep the launcher hidden everywhere except the Website Opportunities page.
+  let lastPath = '';
+  const syncLauncher = () => {
+    if (location.pathname === lastPath) return;
+    lastPath = location.pathname;
+    button.hidden = lastPath !== '/website-opportunities';
+    button.style.display = button.hidden ? 'none' : 'block';
+  };
+  syncLauncher();
+  window.addEventListener('popstate', syncLauncher);
+  window.addEventListener('hashchange', syncLauncher);
+  new MutationObserver(syncLauncher).observe(document.documentElement, { childList: true, subtree: true });
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (message.type !== 'AO_CRM_REVIEW') return;
     bridgeReady.then(() => send({action:'review', id:message.id, tag:message.tag})).then(()=>reply({ok:true})).catch(e=>reply({error:e.message}));
