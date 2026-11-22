@@ -33,6 +33,7 @@ function mockBackground() {
       onUpdated: { addListener(f) { listeners.updated = f; } },
       onRemoved: { addListener(f) { listeners.removed = f; } },
       async create({ url }) { changes.push(['create', url]); return { id: 77, url }; },
+      async get(id) { return { id, url: changes.filter(change => change[0] === 'create' || change[0] === 'update').at(-1)?.at(-1) }; },
       async update(id, { url }) { changes.push(['update', id, url]); return { id, url }; },
       async sendMessage(tabId, message) { sent.push([tabId, message]); return { ok: true }; },
       async query() { return []; },
@@ -114,4 +115,12 @@ test('only installs the authenticated CRM bridge on CRM pages', async () => {
   const good=await b.send({type:'AO_INSTALL_CRM_PAGE'},{tab:{id:10,url:'https://autotext-psi.vercel.app/website-opportunities'}});
   assert.equal(good.ok,true);
   assert.equal(b.sent.filter(([kind])=>kind==='inject').length,1);
+});
+
+test('reinforces overlay injection when a website finishes loading', async () => {
+  const b = mockBackground();
+  await b.send({type:'AO_VIEW_START',items:[{id:'one',websiteUrl:'https://first.example'}]},{tab:{id:10,url:'https://autotext-psi.vercel.app/website-opportunities'}});
+  b.listeners.updated(77,{status:'complete'});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(b.sent.some(([kind, options]) => kind === 'inject' && options.files?.includes('review-overlay.js')));
 });
