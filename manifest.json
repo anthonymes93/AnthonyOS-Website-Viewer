@@ -5,7 +5,8 @@
   "description": "Review AnthonyOS website opportunities in one browser tab.",
   "permissions": [
     "tabs",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "https://autotext-psi.vercel.app/*",
@@ -41,17 +42,8 @@
     }
   ],
   "action": {
-    "default_title": "Open AnthonyOS website viewer"
+    "default_title": "AnthonyOS Website Viewer",
+    "default_popup": "popup.html"
   },
-  "minimum_chrome_version": "114",
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "crm-page.js"
-      ],
-      "matches": [
-        "https://autotext-psi.vercel.app/*"
-      ]
-    }
-  ]
+  "minimum_chrome_version": "114"
 }
