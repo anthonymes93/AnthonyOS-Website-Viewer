@@ -19,7 +19,7 @@
     finally{busy=false;setDisabled();}
   }
   function setDisabled(){root.querySelectorAll('button').forEach(b=>b.disabled=busy);}
-  function paint(s){active=!!s.active;if(!active){host.remove();return;}if(!host.isConnected)document.documentElement.appendChild(host);
+  function paint(s){active=!!s.active;if(!active){host.style.display='none';return;}host.style.display='block';if(!host.isConnected)document.documentElement.appendChild(host);
     $('title').textContent=s.item?.title || s.item?.websiteUrl || 'No remaining opportunities';
     $('count').textContent=s.total ? (s.index+1)+' / '+s.total : 'Complete';
     const listing=$('listing');listing.href=s.item?.listingUrl||'#';listing.style.display=s.item?.listingUrl?'':'none';
