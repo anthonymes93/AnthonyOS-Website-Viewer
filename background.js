@@ -20,7 +20,7 @@ const move = async delta => {
   const url = validUrl(current()?.websiteUrl ?? '');
   if (url) { await persist(); await chrome.tabs.update(state.tabId, { url }); }
 };
-const openViewer = async (senderTabId, items) => {
+const openViewer = async (senderTabId, items, startId = null) => {
   const clean = (items ?? []).filter(x => x.id && validUrl(x.websiteUrl)).map(x => ({
     id: x.id, title: String(x.title ?? ''), websiteUrl: validUrl(x.websiteUrl),
     listingUrl: validUrl(x.listingUrl ?? ''), tags: Array.isArray(x.tags) ? x.tags : [],
@@ -28,11 +28,11 @@ const openViewer = async (senderTabId, items) => {
   if (!clean.length) return { error: 'No unreviewed opportunities with valid website URLs.' };
   await restored;
   state.items = clean;
-  state.index = 0;
+  state.index = Math.max(0, clean.findIndex(item => item.id === startId));
   state.crmTabId = senderTabId;
   state.waiting = false;
   await persist();
-  const url = clean[0].websiteUrl;
+  const url = clean[state.index].websiteUrl;
   if (state.tabId) {
     try { await chrome.tabs.update(state.tabId, { url, active: true }); return { ok: true, total: clean.length }; } catch {}
   }
@@ -45,7 +45,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
     await restored;
     if (message.type === 'AO_INSTALL_CRM_PAGE') { if (!sender.tab?.id || !sender.tab.url?.startsWith('https://autotext-psi.vercel.app/')) return { error: 'Not the AnthonyOS CRM.' }; await chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, files: ['crm-page.js'], world: 'MAIN' }); return { ok: true }; }
-    if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items);
+    if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items, message.startId);
     if (message.type === 'AO_VIEW_MOVE') { await move(message.delta > 0 ? 1 : -1); return { ok: true }; }
     if (message.type === 'AO_VIEW_GET') return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting };
     if (message.type === 'AO_VIEW_REVIEW') {
