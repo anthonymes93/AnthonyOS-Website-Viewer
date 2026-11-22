@@ -62,15 +62,14 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         id: x.id, title: String(x.title ?? ''), websiteUrl: validUrl(x.websiteUrl),
         listingUrl: validUrl(x.listingUrl ?? ''), tags: Array.isArray(x.tags) ? x.tags : [],
       }));
+      // A background CRM refresh must never change the website being viewed.
+      // Keep the current item even if the refreshed list temporarily omits it.
       const previous = current();
-      const previousIndex = state.index;
+      if (previous && !clean.some(x => x.id === previous.id)) clean.push(previous);
       state.items = clean;
-      state.index = Math.max(0, clean.findIndex(x => x.id === previous?.id));
-      if (previous && !clean.some(x => x.id === previous.id)) state.index = Math.min(previousIndex, Math.max(0, clean.length - 1));
+      state.index = previous ? clean.findIndex(x => x.id === previous.id) : 0;
       await persist();
-      const next = current();
-      if (next && previous?.id !== next.id) await chrome.tabs.update(state.tabId, { url: next.websiteUrl });
-      else await emit();
+      await emit();
       return { ok: true, total: clean.length };
     }
     if (message.type === 'AO_VIEW_MOVE') { await move(message.delta > 0 ? 1 : -1); return { ok: true }; }
