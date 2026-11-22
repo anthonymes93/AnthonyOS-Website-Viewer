@@ -1,5 +1,5 @@
 const CRM_URL = 'https://autotext-psi.vercel.app/website-opportunities';
-let state = { items: [], index: 0, tabId: null, crmTabId: null, controlWindowId: null, waiting: false };
+let state = { items: [], index: 0, tabId: null, crmTabId: null, controlWindowId: null, waiting: false };\nlet reviewQueue = Promise.resolve();\nlet reviewError = '';
 async function persist() { await chrome.storage.session.set({ viewerState: state }); }
 const restored = chrome.storage.session.get('viewerState').then(data => { if (data.viewerState) state = data.viewerState; }).catch(() => {});
 
@@ -73,24 +73,34 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       return { ok: true, total: clean.length };
     }
     if (message.type === 'AO_VIEW_MOVE') { await move(message.delta > 0 ? 1 : -1); return { ok: true }; }
-    if (message.type === 'AO_VIEW_GET') return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting };
+    if (message.type === 'AO_VIEW_GET') return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting, reviewError };
     if (message.type === 'AO_VIEW_REVIEW') {
-      if ((sender.tab?.id !== state.tabId && !sender.url?.startsWith(chrome.runtime.getURL('popup.html'))) || state.waiting) return { error: 'No active viewer or save already in progress.' };
+      if (sender.tab?.id !== state.tabId && !sender.url?.startsWith(chrome.runtime.getURL('popup.html'))) return { error: 'No active viewer.' };
       if (!state.crmTabId) return { error: 'CRM tab unavailable. Open the CRM to resume.' };
       const item = current();
-      state.waiting = true; await emit();
-      try {
-        const result = await chrome.tabs.sendMessage(state.crmTabId, { type: 'AO_CRM_REVIEW', id: item.id, tag: message.tag });
-        if (!result?.ok) throw new Error(result?.error || 'Could not save review');
-        // Keep reviewed entries in the session so Previous can revisit them.
-        state.items[state.index].tags = message.tag ? [message.tag] : [];
-        state.index = (state.index + 1) % state.items.length;
-        await persist();
-        const nextUrl = current()?.websiteUrl || CRM_URL;
-        await chrome.tabs.update(state.tabId, { url: nextUrl });
-        return { ok: true };
-      } catch (error) { return { error: String(error?.message || error) }; }
-      finally { state.waiting = false; await persist(); await emit(); }
+      if (!item) return { error: 'No website selected.' };
+      const tag = message.tag || '';
+      const crmTabId = state.crmTabId;
+      const previousTags = [...item.tags];
+      item.tags = tag ? [tag] : [];
+      state.index = (state.index + 1) % state.items.length;
+      // Navigate immediately; Firestore saving happens asynchronously in order.
+      const nextUrl = current()?.websiteUrl || CRM_URL;
+      const navigation = chrome.tabs.update(state.tabId, { url: nextUrl });
+      void persist();
+      reviewError = '';
+      reviewQueue = reviewQueue.catch(() => {}).then(async () => {
+        try {
+          const result = await chrome.tabs.sendMessage(crmTabId, { type: 'AO_CRM_REVIEW', id: item.id, tag });
+          if (!result?.ok) throw new Error(result?.error || 'Could not save review');
+        } catch (error) {
+          item.tags = previousTags;
+          reviewError = `Could not save review for ${item.title || item.websiteUrl}: ${String(error?.message || error)}`;
+          await persist();
+        }
+      });
+      await navigation;
+      return { ok: true };
     }
     return { error: 'Unknown message' };
   })().then(reply).catch(e => reply({ error: String(e.message ?? e) }));
