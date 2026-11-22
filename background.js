@@ -61,7 +61,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         await persist();
         return { ok: true };
       } catch (error) { return { error: String(error?.message || error) }; }
-      finally { state.waiting = false; await emit(); }
+      finally { state.waiting = false; await persist(); await emit(); }
     }
     return { error: 'Unknown message' };
   })().then(reply).catch(e => reply({ error: String(e.message ?? e) }));
