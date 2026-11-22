@@ -1,7 +1,7 @@
 (() => {
   if (window.__anthonyViewerOverlay) return;
   window.__anthonyViewerOverlay = true;
-  const tags = ['Ugly Website','Good Website','Website Redesign Opportunity','AI Receptionist Opportunity','LeadBolt Opportunity','High Value'];
+  const tags = ['Good Website','Ugly Website','Immediately Contact'];
   let active=false, busy=false;
   const host=document.createElement('div'); host.id='anthonyos-viewer-overlay';
   host.style.cssText='position:fixed;bottom:18px;right:18px;z-index:2147483647;font:13px system-ui,sans-serif;color:#fff;';
