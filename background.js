@@ -47,6 +47,23 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     await restored;
     if (message.type === 'AO_INSTALL_CRM_PAGE') { if (!sender.tab?.id || !sender.tab.url?.startsWith('https://autotext-psi.vercel.app/')) return { error: 'Not the AnthonyOS CRM.' }; await chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, files: ['crm-page.js'], world: 'MAIN' }); return { ok: true }; }
     if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items, message.startId);
+    if (message.type === 'AO_VIEW_SYNC') {
+      if (sender.tab?.id !== state.crmTabId || !state.tabId || state.waiting) return { ok: false };
+      const clean = (message.items ?? []).filter(x => x.id && validUrl(x.websiteUrl)).map(x => ({
+        id: x.id, title: String(x.title ?? ''), websiteUrl: validUrl(x.websiteUrl),
+        listingUrl: validUrl(x.listingUrl ?? ''), tags: Array.isArray(x.tags) ? x.tags : [],
+      }));
+      const previous = current();
+      const previousIndex = state.index;
+      state.items = clean;
+      state.index = Math.max(0, clean.findIndex(x => x.id === previous?.id));
+      if (previous && !clean.some(x => x.id === previous.id)) state.index = Math.min(previousIndex, Math.max(0, clean.length - 1));
+      await persist();
+      const next = current();
+      if (next && previous?.id !== next.id) await chrome.tabs.update(state.tabId, { url: next.websiteUrl });
+      else await emit();
+      return { ok: true, total: clean.length };
+    }
     if (message.type === 'AO_VIEW_MOVE') { await move(message.delta > 0 ? 1 : -1); return { ok: true }; }
     if (message.type === 'AO_VIEW_GET') return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting };
     if (message.type === 'AO_VIEW_REVIEW') {
