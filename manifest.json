@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AnthonyOS Website Viewer",
-  "version": "0.1.0",
-  "description": "Review AnthonyOS website opportunities in one browser tab.",
+  "version": "0.2.0",
+  "description": "Review AnthonyOS opportunities with persistent controls that work even on broken websites.",
   "permissions": [
     "tabs",
     "storage",
@@ -25,20 +25,6 @@
         "crm-bridge.js"
       ],
       "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "exclude_matches": [
-        "https://autotext-psi.vercel.app/*"
-      ],
-      "js": [
-        "review-overlay.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
     }
   ],
   "action": {
