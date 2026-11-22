@@ -20,14 +20,14 @@ const move = async delta => {
   const url = validUrl(current()?.websiteUrl ?? '');
   if (url) { await persist(); await chrome.tabs.update(state.tabId, { url }); maybePrefetch(); }
 };
-const openViewer = async (senderTabId, items, startId = null) => {
+const openViewer = async (senderTabId, items, startId = null, hasMore = false) => {
   const clean = (items ?? []).filter(x => x.id && validUrl(x.websiteUrl)).map(x => ({
     id: x.id, title: String(x.title ?? ''), websiteUrl: validUrl(x.websiteUrl),
     listingUrl: validUrl(x.listingUrl ?? ''), tags: Array.isArray(x.tags) ? x.tags : [],
   }));
   if (!clean.length) return { error: 'No opportunities with valid website URLs.' };
   await restored;
-  state.items = clean;\n  hasMorePages = clean.length >= 10;
+  state.items = clean;\n  hasMorePages = !!hasMore;
   state.index = Math.max(0, clean.findIndex(item => item.id === startId));
   state.crmTabId = senderTabId;
   state.waiting = false;
@@ -53,7 +53,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
     await restored;
     if (message.type === 'AO_INSTALL_CRM_PAGE') { if (!sender.tab?.id || !sender.tab.url?.startsWith('https://autotext-psi.vercel.app/')) return { error: 'Not the AnthonyOS CRM.' }; await chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, files: ['crm-page.js'], world: 'MAIN' }); return { ok: true }; }
-    if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items, message.startId);
+    if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items, message.startId, message.hasMore);
     if (message.type === 'AO_VIEW_SYNC_STATUS') return { active: sender.tab?.id === state.crmTabId && !!state.tabId };
     if (message.type === 'AO_VIEW_SYNC') {
       if (sender.tab?.id !== state.crmTabId || !state.tabId || state.waiting) return { ok: false };
