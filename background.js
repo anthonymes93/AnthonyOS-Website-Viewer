@@ -39,6 +39,7 @@ async function restoredAfterStartup() {
 }
 let reviewError = '';
 let hasMorePages = true;
+let fullTotal = null;
 let pageLoading = null;
 async function prefetchPage() {
   if (!hasMorePages || pageLoading || !state.crmTabId) return pageLoading;
@@ -74,7 +75,7 @@ const move = async delta => {
   const url = validUrl(current()?.websiteUrl ?? '');
   if (url) { void persist(); void chrome.tabs.update(state.tabId, { url }).catch(error => { reviewError = 'Navigation failed: ' + error.message; }); maybePrefetch(); }
 };
-const openViewer = async (senderTabId, items, startId = null, hasMore = false) => {
+const openViewer = async (senderTabId, items, startId = null, hasMore = false, totalCount = null) => {
   const clean = (items ?? []).filter(x => x.id && validUrl(x.websiteUrl)).map(x => ({
     id: x.id, title: String(x.title ?? ''), websiteUrl: validUrl(x.websiteUrl),
     listingUrl: validUrl(x.listingUrl ?? ''), tags: Array.isArray(x.tags) ? x.tags : [],
@@ -83,6 +84,7 @@ const openViewer = async (senderTabId, items, startId = null, hasMore = false) =
   await restored;
   state.items = clean;
   hasMorePages = !!hasMore;
+  fullTotal = Number.isFinite(totalCount) ? totalCount : null;
   state.index = Math.max(0, clean.findIndex(item => item.id === startId));
   state.crmTabId = senderTabId;
   state.waiting = false;
@@ -110,7 +112,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
     await restored;
     if (message.type === 'AO_INSTALL_CRM_PAGE') { if (!sender.tab?.id || !sender.tab.url?.startsWith('https://autotext-psi.vercel.app/')) return { error: 'Not the AnthonyOS CRM.' }; await chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, files: ['crm-page.js'], world: 'MAIN' }); return { ok: true }; }
-    if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items, message.startId, message.hasMore);
+    if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items, message.startId, message.hasMore, message.totalCount);
     if (message.type === 'AO_VIEW_SYNC_STATUS') return { active: sender.tab?.id === state.crmTabId && !!state.tabId };
     if (message.type === 'AO_VIEW_SYNC') {
       if (sender.tab?.id !== state.crmTabId || !state.tabId || state.waiting) return { ok: false };
@@ -129,7 +131,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       return { ok: true, total: clean.length };
     }
     if (message.type === 'AO_VIEW_MOVE') { await move(message.delta > 0 ? 1 : -1); return { ok: true }; }
-    if (message.type === 'AO_VIEW_GET') { const pending = await pendingReady; return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting, reviewError, pendingCount: pending.length }; }
+    if (message.type === 'AO_VIEW_GET') { const pending = await pendingReady; return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: fullTotal ?? state.items.length, loaded: state.items.length, waiting: state.waiting, reviewError, pendingCount: pending.length }; }
     if (message.type === 'AO_VIEW_REVIEW') {
       if (sender.tab?.id !== state.tabId && !sender.url?.startsWith(chrome.runtime.getURL('popup.html'))) return { error: 'No active viewer.' };
       if (!state.crmTabId) return { error: 'CRM tab unavailable. Open the CRM to resume.' };
