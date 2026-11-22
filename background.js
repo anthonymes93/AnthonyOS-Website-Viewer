@@ -34,11 +34,12 @@ const openViewer = async (senderTabId, items, startId = null) => {
   await persist();
   const url = clean[state.index].websiteUrl;
   if (state.tabId) {
-    try { await chrome.tabs.update(state.tabId, { url, active: true }); return { ok: true, total: clean.length }; } catch {}
+    try { await chrome.tabs.update(state.tabId, { url, active: true }); ensureOverlayWhenReady(state.tabId); return { ok: true, total: clean.length }; } catch {}
   }
   const tab = await chrome.tabs.create({ url, active: true });
   state.tabId = tab.id;
   await persist();
+  ensureOverlayWhenReady(state.tabId);
   return { ok: true, total: clean.length };
 };
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
@@ -70,6 +71,13 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   })().then(reply).catch(e => reply({ error: String(e.message ?? e) }));
   return true;
 });
+// Handle fast/cached page loads that finish before the new tab ID is persisted.
+async function ensureOverlayWhenReady(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.status === 'complete') await ensureOverlay(tabId);
+  } catch {}
+}
 // Explicitly restore the overlay after a full website navigation.
 async function ensureOverlay(tabId) {
   await restored;
