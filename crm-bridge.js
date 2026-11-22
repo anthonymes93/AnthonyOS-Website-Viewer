@@ -18,21 +18,7 @@
     window.addEventListener('message', listener);
     window.postMessage({ channel: CHANNEL, kind: REQUEST, id, payload }, location.origin);
   });
-  // Keep the active viewer aligned with Firestore updates reflected in the CRM.
-  let syncing = false;
-  setInterval(async () => {
-    if (syncing || location.pathname !== '/website-opportunities') return;
-    syncing = true;
-    try {
-      await bridgeReady;
-      const status = await chrome.runtime.sendMessage({ type: 'AO_VIEW_SYNC_STATUS' });
-      if (status?.active) {
-        const items = await send({ action: 'list' });
-        await chrome.runtime.sendMessage({ type: 'AO_VIEW_SYNC', items });
-      }
-    } catch (error) { console.warn('Website Viewer sync:', error); }
-    finally { syncing = false; }
-  }, 5000);
+  // Paginated viewer fetches additional pages on demand; do not resync the full list.
   // Replace the CRM's regular Open Website action when the extension is installed.
   // Capture before React's click handler so it does not create an extra tab.
   document.addEventListener('click', async event => {
@@ -93,6 +79,10 @@
   window.addEventListener('hashchange', syncLauncher);
   new MutationObserver(syncLauncher).observe(document.documentElement, { childList: true, subtree: true });
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
+    if (message.type === 'AO_CRM_PAGE') {
+      bridgeReady.then(() => send({action:'page'})).then(reply).catch(e=>reply({error:e.message}));
+      return true;
+    }
     if (message.type !== 'AO_CRM_REVIEW') return;
     bridgeReady.then(() => send({action:'review', id:message.id, tag:message.tag})).then(()=>reply({ok:true})).catch(e=>reply({error:e.message}));
     return true;
