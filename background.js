@@ -25,7 +25,7 @@ const openViewer = async (senderTabId, items, startId = null) => {
     id: x.id, title: String(x.title ?? ''), websiteUrl: validUrl(x.websiteUrl),
     listingUrl: validUrl(x.listingUrl ?? ''), tags: Array.isArray(x.tags) ? x.tags : [],
   }));
-  if (!clean.length) return { error: 'No unreviewed opportunities with valid website URLs.' };
+  if (!clean.length) return { error: 'No opportunities with valid website URLs.' };
   await restored;
   state.items = clean;
   state.index = Math.max(0, clean.findIndex(item => item.id === startId));
@@ -57,9 +57,9 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       try {
         const result = await chrome.tabs.sendMessage(state.crmTabId, { type: 'AO_CRM_REVIEW', id: item.id, tag: message.tag });
         if (!result?.ok) throw new Error(result?.error || 'Could not save review');
-        state.items.splice(state.index, 1);
-        if (!state.items.length) state.index = 0;
-        else state.index %= state.items.length;
+        // Keep reviewed entries in the session so Previous can revisit them.
+        state.items[state.index].tags = message.tag ? [message.tag] : [];
+        state.index = (state.index + 1) % state.items.length;
         await persist();
         const nextUrl = current()?.websiteUrl || CRM_URL;
         await chrome.tabs.update(state.tabId, { url: nextUrl });
