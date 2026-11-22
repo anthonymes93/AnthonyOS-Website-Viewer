@@ -1,4 +1,5 @@
-const tags=['Good Website','Ugly Website','Could Be Better','Immediately Contact','Website Offline','Website Inspo'];
+const tags=['Good Website','Ugly Website','Could Be Better','Immediately Contact','Website Offline',
+  'Website Has Issues','Website Inspo'];
 const $=id=>document.getElementById(id);
 const send=async data=>Promise.race([
   chrome.runtime.sendMessage(data),
