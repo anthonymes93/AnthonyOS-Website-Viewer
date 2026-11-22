@@ -36,7 +36,8 @@
     openButton.textContent = 'Opening Viewer…';
     try {
       await bridgeReady;
-      const batch = await send({ action: 'list' });\n      const items = batch.items;
+      const batch = await send({ action: 'list' });
+      const items = batch.items;
       const normalize = raw => { try { const text = String(raw); const url = new URL(text.startsWith('http://') || text.startsWith('https://') ? text : 'https://' + text); return url.hostname.startsWith('www.') ? url.hostname.slice(4) : url.hostname; } catch { return ''; } };
       const selected = items.find(item => normalize(item.websiteUrl) === normalize(selectedUrl));
       const result = await chrome.runtime.sendMessage({ type: 'AO_VIEW_START', items, startId: selected?.id, hasMore: batch.hasMore });
