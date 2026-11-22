@@ -1,0 +1,72 @@
+const CRM_URL = 'https://autotext-psi.vercel.app/website-opportunities';
+let state = { items: [], index: 0, tabId: null, crmTabId: null, waiting: false };
+
+const validUrl = raw => {
+  try { const u = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw); return /^https?:$/.test(u.protocol) ? u.href : null; }
+  catch { return null; }
+};
+const current = () => state.items[state.index] ?? null;
+const emit = async () => {
+  if (!state.tabId) return;
+  try { await chrome.tabs.sendMessage(state.tabId, { type: 'AO_VIEW_STATE', item: current(), index: state.index, total: state.items.length, waiting: state.waiting }); } catch {}
+};
+const move = async delta => {
+  if (!state.items.length || state.tabId === null) return;
+  state.index = (state.index + delta + state.items.length) % state.items.length;
+  const url = validUrl(current()?.websiteUrl ?? '');
+  if (url) await chrome.tabs.update(state.tabId, { url });
+};
+const openViewer = async (senderTabId, items) => {
+  const clean = (items ?? []).filter(x => x.id && validUrl(x.websiteUrl)).map(x => ({
+    id: x.id, title: String(x.title ?? ''), websiteUrl: validUrl(x.websiteUrl),
+    listingUrl: validUrl(x.listingUrl ?? ''), tags: Array.isArray(x.tags) ? x.tags : [],
+  }));
+  if (!clean.length) return { error: 'No unreviewed opportunities with valid website URLs.' };
+  state.items = clean;
+  state.index = 0;
+  state.crmTabId = senderTabId;
+  state.waiting = false;
+  const url = clean[0].websiteUrl;
+  if (state.tabId) {
+    try { await chrome.tabs.update(state.tabId, { url, active: true }); return { ok: true, total: clean.length }; } catch {}
+  }
+  const tab = await chrome.tabs.create({ url, active: true });
+  state.tabId = tab.id;
+  return { ok: true, total: clean.length };
+};
+chrome.runtime.onMessage.addListener((message, sender, reply) => {
+  (async () => {
+    if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items);
+    if (message.type === 'AO_VIEW_MOVE') { await move(message.delta > 0 ? 1 : -1); return { ok: true }; }
+    if (message.type === 'AO_VIEW_GET') return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting };
+    if (message.type === 'AO_VIEW_REVIEW') {
+      if (sender.tab?.id !== state.tabId || state.waiting) return { error: 'No active viewer or save already in progress.' };
+      if (!state.crmTabId) return { error: 'CRM tab unavailable. Open the CRM to resume.' };
+      const item = current();
+      state.waiting = true; await emit();
+      try {
+        const result = await chrome.tabs.sendMessage(state.crmTabId, { type: 'AO_CRM_REVIEW', id: item.id, tag: message.tag });
+        if (!result?.ok) throw new Error(result?.error || 'Could not save review');
+        state.items.splice(state.index, 1);
+        if (!state.items.length) { state.index = 0; await chrome.tabs.update(state.tabId, { url: CRM_URL }); }
+        else { state.index %= state.items.length; await chrome.tabs.update(state.tabId, { url: current().websiteUrl }); }
+        return { ok: true };
+      } catch (error) { return { error: String(error?.message || error) }; }
+      finally { state.waiting = false; await emit(); }
+    }
+    return { error: 'Unknown message' };
+  })().then(reply).catch(e => reply({ error: String(e.message ?? e) }));
+  return true;
+});
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (tabId === state.tabId && changeInfo.status === 'complete') emit();
+});
+chrome.tabs.onRemoved.addListener(tabId => {
+  if (tabId === state.tabId) state.tabId = null;
+  if (tabId === state.crmTabId) state.crmTabId = null;
+});
+chrome.action.onClicked.addListener(async () => {
+  const matching = await chrome.tabs.query({ url: 'https://autotext-psi.vercel.app/*' });
+  if (matching.length) return chrome.tabs.update(matching[0].id, { url: CRM_URL, active: true });
+  await chrome.tabs.create({ url: CRM_URL });
+});
