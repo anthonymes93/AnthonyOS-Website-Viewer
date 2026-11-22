@@ -94,3 +94,24 @@ test('review fails without a CRM tab, preserving queue', async () => {
   assert.match(result.error,/CRM tab unavailable/);
   assert.equal((await b.send({type:'AO_VIEW_GET'},{tab:{id:77}})).total,1);
 });
+
+test('starts at the opportunity selected by an Open Website click', async () => {
+  const b=mockBackground();
+  const crm={ tab:{id:10,url:'https://autotext-psi.vercel.app/website-opportunities'} };
+  const response=await b.send({type:'AO_VIEW_START',startId:'two',items:[
+    {id:'one',websiteUrl:'https://first.example'},
+    {id:'two',websiteUrl:'https://second.example'},
+  ]},crm);
+  assert.equal(response.ok,true);
+  assert.deepEqual(b.changes[0],['create','https://second.example/']);
+  assert.equal((await b.send({type:'AO_VIEW_GET'},{tab:{id:77}})).index,1);
+});
+
+test('only installs the authenticated CRM bridge on CRM pages', async () => {
+  const b=mockBackground();
+  const bad=await b.send({type:'AO_INSTALL_CRM_PAGE'},{tab:{id:40,url:'https://another.example/'}});
+  assert.match(bad.error,/Not the AnthonyOS CRM/);
+  const good=await b.send({type:'AO_INSTALL_CRM_PAGE'},{tab:{id:10,url:'https://autotext-psi.vercel.app/website-opportunities'}});
+  assert.equal(good.ok,true);
+  assert.equal(b.sent.filter(([kind])=>kind==='inject').length,1);
+});
