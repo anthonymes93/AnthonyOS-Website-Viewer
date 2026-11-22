@@ -9,7 +9,7 @@
     .then(result => { if (!result?.ok) throw new Error(result?.error || 'Could not initialize CRM bridge'); });
   const send = payload => new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
-    const timeout = setTimeout(() => { window.removeEventListener('message', listener); reject(new Error('CRM did not respond. Refresh its tab.')); }, 12000);
+    const timeout = setTimeout(() => { window.removeEventListener('message', listener); reject(new Error('CRM did not respond. Refresh its tab.')); }, 60000);
     function listener(event) {
       if (event.source !== window || event.data?.channel !== CHANNEL || event.data?.kind !== RESPONSE || event.data?.id !== id) return;
       window.removeEventListener('message', listener); clearTimeout(timeout);
@@ -73,7 +73,7 @@
       await bridgeReady;
       const data = await send({ action:'list' });
       const result = await chrome.runtime.sendMessage({ type:'AO_VIEW_START', items:data });
-      if (result?.error) throw new Error(result.error);
+      if (!result?.ok) throw new Error(result?.error || 'Viewer did not open');
       button.textContent = 'Viewer opened (' + result.total + ')';
     } catch(e) { button.textContent = 'Viewer error: ' + e.message; }
     finally { setTimeout(()=>{button.disabled=false;button.textContent='Launch Website Viewer';},3500); }
