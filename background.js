@@ -1,5 +1,7 @@
 const CRM_URL = 'https://autotext-psi.vercel.app/website-opportunities';
 let state = { items: [], index: 0, tabId: null, crmTabId: null, waiting: false };
+async function persist() { await chrome.storage.session.set({ viewerState: state }); }
+const restored = chrome.storage.session.get('viewerState').then(data => { if (data.viewerState) state = data.viewerState; }).catch(() => {});
 
 const validUrl = raw => {
   try { const u = new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw); return /^https?:$/.test(u.protocol) ? u.href : null; }
@@ -7,14 +9,16 @@ const validUrl = raw => {
 };
 const current = () => state.items[state.index] ?? null;
 const emit = async () => {
+  await restored;
   if (!state.tabId) return;
   try { await chrome.tabs.sendMessage(state.tabId, { type: 'AO_VIEW_STATE', item: current(), index: state.index, total: state.items.length, waiting: state.waiting }); } catch {}
 };
 const move = async delta => {
+  await restored;
   if (!state.items.length || state.tabId === null) return;
   state.index = (state.index + delta + state.items.length) % state.items.length;
   const url = validUrl(current()?.websiteUrl ?? '');
-  if (url) await chrome.tabs.update(state.tabId, { url });
+  if (url) { await persist(); await chrome.tabs.update(state.tabId, { url }); }
 };
 const openViewer = async (senderTabId, items) => {
   const clean = (items ?? []).filter(x => x.id && validUrl(x.websiteUrl)).map(x => ({
@@ -22,20 +26,24 @@ const openViewer = async (senderTabId, items) => {
     listingUrl: validUrl(x.listingUrl ?? ''), tags: Array.isArray(x.tags) ? x.tags : [],
   }));
   if (!clean.length) return { error: 'No unreviewed opportunities with valid website URLs.' };
+  await restored;
   state.items = clean;
   state.index = 0;
   state.crmTabId = senderTabId;
   state.waiting = false;
+  await persist();
   const url = clean[0].websiteUrl;
   if (state.tabId) {
     try { await chrome.tabs.update(state.tabId, { url, active: true }); return { ok: true, total: clean.length }; } catch {}
   }
   const tab = await chrome.tabs.create({ url, active: true });
   state.tabId = tab.id;
+  await persist();
   return { ok: true, total: clean.length };
 };
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
+    await restored;
     if (message.type === 'AO_VIEW_START') return openViewer(sender.tab?.id, message.items);
     if (message.type === 'AO_VIEW_MOVE') { await move(message.delta > 0 ? 1 : -1); return { ok: true }; }
     if (message.type === 'AO_VIEW_GET') return { ok: true, active: sender.tab?.id === state.tabId, item: current(), index: state.index, total: state.items.length, waiting: state.waiting };
@@ -50,6 +58,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         state.items.splice(state.index, 1);
         if (!state.items.length) { state.index = 0; await chrome.tabs.update(state.tabId, { url: CRM_URL }); }
         else { state.index %= state.items.length; await chrome.tabs.update(state.tabId, { url: current().websiteUrl }); }
+        await persist();
         return { ok: true };
       } catch (error) { return { error: String(error?.message || error) }; }
       finally { state.waiting = false; await emit(); }
@@ -64,6 +73,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 chrome.tabs.onRemoved.addListener(tabId => {
   if (tabId === state.tabId) state.tabId = null;
   if (tabId === state.crmTabId) state.crmTabId = null;
+  persist();
 });
 chrome.action.onClicked.addListener(async () => {
   const matching = await chrome.tabs.query({ url: 'https://autotext-psi.vercel.app/*' });
