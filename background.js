@@ -36,7 +36,7 @@ const move = async delta => {
   if (!state.items.length || state.tabId === null) return;
   state.index = (state.index + delta + state.items.length) % state.items.length;
   const url = validUrl(current()?.websiteUrl ?? '');
-  if (url) { await persist(); await chrome.tabs.update(state.tabId, { url }); maybePrefetch(); }
+  if (url) { void persist(); void chrome.tabs.update(state.tabId, { url }).catch(error => { reviewError = 'Navigation failed: ' + error.message; }); maybePrefetch(); }
 };
 const openViewer = async (senderTabId, items, startId = null, hasMore = false) => {
   const clean = (items ?? []).filter(x => x.id && validUrl(x.websiteUrl)).map(x => ({
@@ -120,7 +120,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
           await persist();
         }
       });
-      await navigation;
+      void navigation.catch(error => { reviewError = 'Navigation failed: ' + error.message; });
       return { ok: true };
     }
     return { error: 'Unknown message' };
