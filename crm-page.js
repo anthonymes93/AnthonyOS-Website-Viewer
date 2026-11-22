@@ -10,6 +10,7 @@
       const api=window.__ANTHONYOS_WEBSITE_VIEWER__;
       if (!api || typeof api.list!=='function' || typeof api.review!=='function') throw new Error('CRM viewer integration not installed; update CRM first.');
       if(payload.action==='list') return respond(await api.list());
+      if(payload.action==='page') return respond(await api.page(false));
       if(payload.action==='review') { await api.review(payload.id,payload.tag); return respond({ok:true}); }
       throw new Error('Unsupported action');
     } catch(e){respond(null,String(e?.message??e));}
