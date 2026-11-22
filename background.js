@@ -56,9 +56,11 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         const result = await chrome.tabs.sendMessage(state.crmTabId, { type: 'AO_CRM_REVIEW', id: item.id, tag: message.tag });
         if (!result?.ok) throw new Error(result?.error || 'Could not save review');
         state.items.splice(state.index, 1);
-        if (!state.items.length) { state.index = 0; await chrome.tabs.update(state.tabId, { url: CRM_URL }); }
-        else { state.index %= state.items.length; await chrome.tabs.update(state.tabId, { url: current().websiteUrl }); }
+        if (!state.items.length) state.index = 0;
+        else state.index %= state.items.length;
         await persist();
+        const nextUrl = current()?.websiteUrl || CRM_URL;
+        await chrome.tabs.update(state.tabId, { url: nextUrl });
         return { ok: true };
       } catch (error) { return { error: String(error?.message || error) }; }
       finally { state.waiting = false; await persist(); await emit(); }
