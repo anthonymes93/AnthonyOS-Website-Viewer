@@ -1,5 +1,5 @@
 const CRM_URL = 'https://autotext-psi.vercel.app/website-opportunities';
-let state = { items: [], index: 0, tabId: null, crmTabId: null, controlWindowId: null, waiting: false };\nlet reviewQueue = Promise.resolve();\nlet reviewError = '';
+let state = { items: [], index: 0, tabId: null, crmTabId: null, controlWindowId: null, waiting: false };\nlet reviewQueue = Promise.resolve();\nlet reviewError = '';\nlet hasMorePages = true;\nlet pageLoading = null;\nasync function prefetchPage() {\n  if (!hasMorePages || pageLoading || !state.crmTabId) return pageLoading;\n  pageLoading = (async () => {\n    const result = await chrome.tabs.sendMessage(state.crmTabId, { type: 'AO_CRM_PAGE' });\n    if (result?.error) throw new Error(result.error);\n    const added = (result?.items ?? []).filter(x => x.id && validUrl(x.websiteUrl));\n    const ids = new Set(state.items.map(x => x.id));\n    for (const item of added) if (!ids.has(item.id)) { state.items.push(item); ids.add(item.id); }\n    hasMorePages = !!result?.hasMore;\n    await persist();\n  })().catch(error => { reviewError = 'Could not load more websites: ' + error.message; }).finally(() => { pageLoading = null; });\n  return pageLoading;\n}\nfunction maybePrefetch() { if (state.items.length - state.index <= 5) void prefetchPage(); }
 async function persist() { await chrome.storage.session.set({ viewerState: state }); }
 const restored = chrome.storage.session.get('viewerState').then(data => { if (data.viewerState) state = data.viewerState; }).catch(() => {});
 
@@ -18,7 +18,7 @@ const move = async delta => {
   if (!state.items.length || state.tabId === null) return;
   state.index = (state.index + delta + state.items.length) % state.items.length;
   const url = validUrl(current()?.websiteUrl ?? '');
-  if (url) { await persist(); await chrome.tabs.update(state.tabId, { url }); }
+  if (url) { await persist(); await chrome.tabs.update(state.tabId, { url }); maybePrefetch(); }
 };
 const openViewer = async (senderTabId, items, startId = null) => {
   const clean = (items ?? []).filter(x => x.id && validUrl(x.websiteUrl)).map(x => ({
@@ -27,20 +27,19 @@ const openViewer = async (senderTabId, items, startId = null) => {
   }));
   if (!clean.length) return { error: 'No opportunities with valid website URLs.' };
   await restored;
-  state.items = clean;
+  state.items = clean;\n  hasMorePages = clean.length >= 10;
   state.index = Math.max(0, clean.findIndex(item => item.id === startId));
   state.crmTabId = senderTabId;
   state.waiting = false;
   await persist();
   const url = clean[state.index].websiteUrl;
   if (state.tabId) {
-    try { await chrome.tabs.update(state.tabId, { url, active: true }); await openControls(); return { ok: true, total: clean.length }; } catch {}
+    try { await chrome.tabs.update(state.tabId, { url, active: true }); await openControls(); maybePrefetch(); return { ok: true, total: clean.length }; } catch {}
   }
   const tab = await chrome.tabs.create({ url, active: true });
   state.tabId = tab.id;
   await persist();
-  await openControls();
-  return { ok: true, total: clean.length };
+  await openControls();\n  maybePrefetch();\n  return { ok: true, total: clean.length };
 };
 async function openControls() {
   if (state.controlWindowId) {
@@ -88,6 +87,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       const nextUrl = current()?.websiteUrl || CRM_URL;
       const navigation = chrome.tabs.update(state.tabId, { url: nextUrl });
       void persist();
+      maybePrefetch();
       reviewError = '';
       reviewQueue = reviewQueue.catch(() => {}).then(async () => {
         try {
