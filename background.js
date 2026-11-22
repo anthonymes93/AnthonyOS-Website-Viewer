@@ -70,8 +70,22 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   })().then(reply).catch(e => reply({ error: String(e.message ?? e) }));
   return true;
 });
+// Explicitly restore the overlay after a full website navigation.
+async function ensureOverlay(tabId) {
+  await restored;
+  if (tabId !== state.tabId || !current()) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const url = tab.url || '';
+    if (!(url.startsWith('https://') || url.startsWith('http://')) || url.startsWith('https://autotext-psi.vercel.app/')) return;
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['review-overlay.js'] });
+    await emit();
+  } catch (error) {
+    console.warn('AnthonyOS overlay unavailable; use the extension popup:', error);
+  }
+}
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (tabId === state.tabId && changeInfo.status === 'complete') emit();
+  if (changeInfo.status === 'complete') ensureOverlay(tabId);
 });
 chrome.tabs.onRemoved.addListener(tabId => {
   if (tabId === state.tabId) state.tabId = null;
