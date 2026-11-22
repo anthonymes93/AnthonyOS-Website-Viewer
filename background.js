@@ -1,5 +1,5 @@
 const CRM_URL = 'https://autotext-psi.vercel.app/website-opportunities';
-let state = { items: [], index: 0, tabId: null, crmTabId: null, waiting: false };
+let state = { items: [], index: 0, tabId: null, crmTabId: null, controlWindowId: null, waiting: false };
 async function persist() { await chrome.storage.session.set({ viewerState: state }); }
 const restored = chrome.storage.session.get('viewerState').then(data => { if (data.viewerState) state = data.viewerState; }).catch(() => {});
 
@@ -34,14 +34,22 @@ const openViewer = async (senderTabId, items, startId = null) => {
   await persist();
   const url = clean[state.index].websiteUrl;
   if (state.tabId) {
-    try { await chrome.tabs.update(state.tabId, { url, active: true }); ensureOverlayWhenReady(state.tabId); return { ok: true, total: clean.length }; } catch {}
+    try { await chrome.tabs.update(state.tabId, { url, active: true }); await openControls(); return { ok: true, total: clean.length }; } catch {}
   }
   const tab = await chrome.tabs.create({ url, active: true });
   state.tabId = tab.id;
   await persist();
-  ensureOverlayWhenReady(state.tabId);
+  await openControls();
   return { ok: true, total: clean.length };
 };
+async function openControls() {
+  if (state.controlWindowId) {
+    try { await chrome.windows.get(state.controlWindowId); await chrome.windows.update(state.controlWindowId, { focused: true }); return; } catch { state.controlWindowId = null; }
+  }
+  const w = await chrome.windows.create({ url: chrome.runtime.getURL('popup.html?window=1'), type: 'popup', width: 390, height: 470, focused: true });
+  state.controlWindowId = w.id;
+  await persist();
+}
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   (async () => {
     await restored;
@@ -89,32 +97,11 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   })().then(reply).catch(e => reply({ error: String(e.message ?? e) }));
   return true;
 });
-// Handle fast/cached page loads that finish before the new tab ID is persisted.
-async function ensureOverlayWhenReady(tabId) {
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    if (tab.status === 'complete') await ensureOverlay(tabId);
-  } catch {}
-}
-// Explicitly restore the overlay after a full website navigation.
-async function ensureOverlay(tabId) {
-  await restored;
-  if (tabId !== state.tabId || !current()) return;
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    const url = tab.url || '';
-    if (!(url.startsWith('https://') || url.startsWith('http://')) || url.startsWith('https://autotext-psi.vercel.app/')) return;
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['review-overlay.js'] });
-    await emit();
-  } catch (error) {
-    console.warn('AnthonyOS overlay unavailable; use the extension popup:', error);
-  }
-}
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === 'complete') ensureOverlay(tabId);
-});
 chrome.tabs.onRemoved.addListener(tabId => {
   if (tabId === state.tabId) state.tabId = null;
   if (tabId === state.crmTabId) state.crmTabId = null;
   persist();
+});
+chrome.windows.onRemoved.addListener(windowId => {
+  if (windowId === state.controlWindowId) { state.controlWindowId = null; persist(); }
 });
